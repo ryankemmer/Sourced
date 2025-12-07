@@ -2,24 +2,46 @@
 //  ContentView.swift
 //  Sourced
 //
-//  Created by Ryan Kemmer on 11/17/25.
-//
 
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var flow: OnboardingFlow
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-            
+        ZStack {
+            Color.white.ignoresSafeArea()
+
+            switch flow.step {
+            case .welcome:
+                WelcomeScreen()
+            case .emailAuth:
+                EmailAuthScreen()
+            case .basicProfile:
+                BasicProfileScreen()
+            case .personalizationChoice:
+                PersonalizationChoiceScreen()
+            case .pinterestOAuth:
+                PinterestOAuthScreen()
+            case .uploadOutfits:
+                OutfitUploadScreen()
+            case .styleProfile:
+                StyleProfileScreen()
+            case .sizingProfile:
+                SizingProfileScreen()
+            case .vibeLoading:
+                VibeLoadingScreen()
+            case .styleSummary:
+                StyleSummaryScreen()
+            case .feed:
+                PersonalizedFeedScreen()
+            }
         }
-        .padding()
+        .preferredColorScheme(.light)
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(OnboardingFlow())
 }

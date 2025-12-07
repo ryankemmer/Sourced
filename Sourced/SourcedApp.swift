@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct SourcedApp: App {
+    @StateObject private var flow = OnboardingFlow()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(flow)
         }
     }
 }
