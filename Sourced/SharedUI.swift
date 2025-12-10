@@ -279,7 +279,11 @@ struct SizeGridWomens: View {
             }
             HStack {
                 SizeField(title: "Jacket", placeholder: "S / 4", text: $womens.jacket)
+                SizeField(title: "Sweaters", placeholder: "S / M", text: $womens.sweaters)
+            }
+            HStack {
                 SizeField(title: "Shoes", placeholder: "7.5", text: $womens.shoes)
+                SizeField(title: "Handbags", placeholder: "Med / Lg", text: $womens.handbags)
             }
             HStack {
                 SizeField(title: "Dress", placeholder: "4 / S", text: $womens.dress)

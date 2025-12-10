@@ -5,16 +5,13 @@
 
 import SwiftUI
 import AuthenticationServices
+import GoogleSignIn
 
 // MARK: - Welcome
 
-// OnboardingScreens.swift
-
-import SwiftUI
-import AuthenticationServices
-
 struct WelcomeScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
+    @State private var appleSignInCoordinator: SignInWithAppleCoordinator?
 
     var body: some View {
         VStack {
@@ -40,8 +37,7 @@ struct WelcomeScreen: View {
             VStack(spacing: 14) {
                 // PRIMARY: Sign in with Apple
                 Button {
-                    // TODO: handle Sign in with Apple
-                    flow.step = .basicProfile
+                    handleSignInWithApple()
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "apple.logo")
@@ -53,8 +49,7 @@ struct WelcomeScreen: View {
 
                 // Google
                 Button {
-                    // TODO: integrate GoogleSignIn
-                    flow.step = .basicProfile
+                    handleSignInWithGoogle()
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "g.circle")
@@ -85,6 +80,84 @@ struct WelcomeScreen: View {
         }
         .background(Color.white.ignoresSafeArea())
     }
+
+    private func handleSignInWithApple() {
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+
+        let coordinator = SignInWithAppleCoordinator(flow: flow)
+        appleSignInCoordinator = coordinator
+
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = coordinator
+        controller.presentationContextProvider = coordinator
+        controller.performRequests()
+    }
+
+    private func handleSignInWithGoogle() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            print("No root view controller found")
+            return
+        }
+
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
+            if let error = error {
+                print("Google Sign-In error: \(error.localizedDescription)")
+                return
+            }
+
+            guard let user = result?.user,
+                  let profile = user.profile else {
+                print("No user profile found")
+                return
+            }
+
+            // Store Google user info
+            flow.authMethod = .google
+            flow.googleUserID = user.userID ?? ""
+            flow.email = profile.email
+            flow.firstName = profile.givenName ?? ""
+
+            // Navigate to basic profile
+            flow.step = .basicProfile
+        }
+    }
+}
+
+class SignInWithAppleCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+    let flow: OnboardingFlow
+
+    init(flow: OnboardingFlow) {
+        self.flow = flow
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first else {
+            return UIWindow()
+        }
+        return window
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
+            flow.authMethod = .apple
+            flow.appleUserID = appleIDCredential.user
+            flow.email = appleIDCredential.email ?? ""
+
+            if let givenName = appleIDCredential.fullName?.givenName {
+                flow.firstName = givenName
+            }
+
+            // Navigate to basic profile
+            flow.step = .basicProfile
+        }
+    }
+
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        print("Sign in with Apple error: \(error.localizedDescription)")
+    }
 }
 
 // MARK: - Email Auth
@@ -114,6 +187,7 @@ struct EmailAuthScreen: View {
 
                 VStack(spacing: 12) {
                     Button {
+                        flow.authMethod = .email
                         flow.email = email
                         flow.password = password
                         flow.step = .basicProfile

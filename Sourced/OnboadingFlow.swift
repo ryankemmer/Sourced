@@ -24,12 +24,22 @@ final class OnboardingFlow: ObservableObject {
     @Published var step: Step = .welcome
 
     // Auth
+    @Published var authMethod: AuthMethod = .none
     @Published var email: String = ""
     @Published var password: String = ""
+    @Published var appleUserID: String = ""
+    @Published var googleUserID: String = ""
 
     // Profile
     @Published var firstName: String = ""
     @Published var username: String = ""
+
+    enum AuthMethod {
+        case none
+        case apple
+        case google
+        case email
+    }
 
     // Personalization choices
     @Published var prefersPinterest: Bool = false
@@ -73,4 +83,6 @@ struct WomensSizes {
     var shoes: String = ""
     var dress: String = ""
     var skirt: String = ""
+    var sweaters: String = ""
+    var handbags: String = ""
 }

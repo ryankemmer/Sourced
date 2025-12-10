@@ -489,7 +489,9 @@ struct StyleSummaryScreen: View {
                 "Shirt: \(flow.womensSizes.shirt.ifEmpty("Not set"))",
                 "Pants: \(flow.womensSizes.pants.ifEmpty("Not set"))",
                 "Jacket: \(flow.womensSizes.jacket.ifEmpty("Not set"))",
+                "Sweaters: \(flow.womensSizes.sweaters.ifEmpty("Not set"))",
                 "Shoes: \(flow.womensSizes.shoes.ifEmpty("Not set"))",
+                "Handbags: \(flow.womensSizes.handbags.ifEmpty("Not set"))",
                 "Dress: \(flow.womensSizes.dress.ifEmpty("Not set"))",
                 "Skirt: \(flow.womensSizes.skirt.ifEmpty("Not set"))"
             ]
