@@ -17,6 +17,7 @@ struct ThriftItem: Identifiable {
 
 struct PersonalizedFeedScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
+    @State private var showLogoutConfirmation = false
 
     let items: [ThriftItem] = [
         ThriftItem(
@@ -58,11 +59,17 @@ struct PersonalizedFeedScreen: View {
                 Spacer()
 
                 Button {
-                    // TODO: open profile
+                    showLogoutConfirmation = true
                 } label: {
                     Image(systemName: "person.crop.circle")
                         .font(.system(size: 22))
                         .foregroundColor(.black)
+                }
+                .confirmationDialog("Account", isPresented: $showLogoutConfirmation) {
+                    Button("Log Out", role: .destructive) {
+                        flow.logout()
+                    }
+                    Button("Cancel", role: .cancel) { }
                 }
             }
             .padding(.horizontal, 20)

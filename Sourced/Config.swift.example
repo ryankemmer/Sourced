@@ -9,6 +9,10 @@
 import Foundation
 
 enum Config {
+    // Google Sign-In
     static let googleClientID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
     static let googleReversedClientID = "com.googleusercontent.apps.YOUR_REVERSED_CLIENT_ID"
+
+    // API Endpoints
+    static let authEndpoint = "https://YOUR_API_GATEWAY_URL/prod/auth"
 }

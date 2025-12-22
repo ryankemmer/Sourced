@@ -35,6 +35,22 @@ struct WelcomeScreen: View {
             Spacer()
 
             VStack(spacing: 14) {
+                if flow.isAuthenticating {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(1.2)
+                        .padding(.bottom, 8)
+                }
+
+                if let error = flow.authError {
+                    Text(error)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                }
+
                 // PRIMARY: Sign in with Apple
                 Button {
                     handleSignInWithApple()
@@ -46,6 +62,7 @@ struct WelcomeScreen: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .frame(height: 48)
+                .disabled(flow.isAuthenticating)
 
                 // Google
                 Button {
@@ -57,9 +74,11 @@ struct WelcomeScreen: View {
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle())
+                .disabled(flow.isAuthenticating)
 
                 // Email
                 Button {
+                    flow.authError = nil
                     flow.step = .emailAuth
                 } label: {
                     HStack(spacing: 10) {
@@ -68,6 +87,7 @@ struct WelcomeScreen: View {
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle())
+                .disabled(flow.isAuthenticating)
 
                 Text("We never post on your behalf. We only use your data to personalize your thrift experience.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -104,12 +124,14 @@ struct WelcomeScreen: View {
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 print("Google Sign-In error: \(error.localizedDescription)")
+                flow.authError = "Google Sign-In failed: \(error.localizedDescription)"
                 return
             }
 
             guard let user = result?.user,
                   let profile = user.profile else {
                 print("No user profile found")
+                flow.authError = "No user profile found"
                 return
             }
 
@@ -119,8 +141,10 @@ struct WelcomeScreen: View {
             flow.email = profile.email
             flow.firstName = profile.givenName ?? ""
 
-            // Navigate to basic profile
-            flow.step = .basicProfile
+            // Authenticate with backend
+            Task {
+                await flow.authenticate()
+            }
         }
     }
 }
@@ -150,13 +174,16 @@ class SignInWithAppleCoordinator: NSObject, ASAuthorizationControllerDelegate, A
                 flow.firstName = givenName
             }
 
-            // Navigate to basic profile
-            flow.step = .basicProfile
+            // Authenticate with backend
+            Task {
+                await flow.authenticate()
+            }
         }
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         print("Sign in with Apple error: \(error.localizedDescription)")
+        flow.authError = "Apple Sign-In failed: \(error.localizedDescription)"
     }
 }
 
@@ -180,22 +207,38 @@ struct EmailAuthScreen: View {
                     .autocapitalization(.none)
                     .keyboardType(.emailAddress)
                     .modifier(OnboardingTextField())
+                    .disabled(flow.isAuthenticating)
 
                 SecureField("Password", text: $password)
                     .textContentType(.password)
                     .modifier(OnboardingTextField())
+                    .disabled(flow.isAuthenticating)
+
+                if let error = flow.authError {
+                    Text(error)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
 
                 VStack(spacing: 12) {
                     Button {
-                        flow.authMethod = .email
-                        flow.email = email
-                        flow.password = password
-                        flow.step = .basicProfile
+                        Task {
+                            flow.authMethod = .email
+                            flow.email = email
+                            flow.password = password
+                            await flow.authenticate()
+                        }
                     } label: {
-                        Text("Continue")
+                        if flow.isAuthenticating {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Continue")
+                        }
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty || flow.isAuthenticating)
                 }
                 .padding(.top, 10)
             }

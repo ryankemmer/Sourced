@@ -29,6 +29,10 @@ final class OnboardingFlow: ObservableObject {
     @Published var password: String = ""
     @Published var appleUserID: String = ""
     @Published var googleUserID: String = ""
+    @Published var authToken: String = ""
+    @Published var userId: String = ""
+    @Published var isAuthenticating: Bool = false
+    @Published var authError: String?
 
     // Profile
     @Published var firstName: String = ""
@@ -54,6 +58,95 @@ final class OnboardingFlow: ObservableObject {
     @Published var sizingGender: SizingGender = .mens
     @Published var mensSizes = MensSizes()
     @Published var womensSizes = WomensSizes()
+
+    func authenticate() async {
+        await MainActor.run {
+            isAuthenticating = true
+            authError = nil
+        }
+
+        let mechanism: AuthMechanism
+        let passwordToSend: String
+
+        switch authMethod {
+        case .email:
+            mechanism = .standard
+            passwordToSend = password
+        case .google:
+            mechanism = .google
+            passwordToSend = googleUserID
+        case .apple:
+            mechanism = .apple
+            passwordToSend = appleUserID
+        case .none:
+            await MainActor.run {
+                isAuthenticating = false
+                authError = "No authentication method selected"
+            }
+            return
+        }
+
+        do {
+            let response = try await AuthService.shared.authenticate(
+                email: email,
+                password: passwordToSend,
+                mechanism: mechanism
+            )
+
+            await MainActor.run {
+                if response.success {
+                    authToken = response.token ?? ""
+                    userId = response.userId ?? ""
+
+                    // Save auth state to persist login
+                    AuthManager.shared.saveAuthState(token: authToken, userId: userId)
+
+                    step = .basicProfile
+                } else {
+                    authError = response.message ?? "Authentication failed"
+                }
+                isAuthenticating = false
+            }
+        } catch let error as AuthError {
+            await MainActor.run {
+                switch error {
+                case .invalidURL:
+                    authError = "Invalid server URL"
+                case .invalidResponse:
+                    authError = "Invalid server response"
+                case .serverError(let message):
+                    authError = message
+                case .networkError(let err):
+                    authError = "Network error: \(err.localizedDescription)"
+                }
+                isAuthenticating = false
+            }
+        } catch {
+            await MainActor.run {
+                authError = "Unexpected error: \(error.localizedDescription)"
+                isAuthenticating = false
+            }
+        }
+    }
+
+    func logout() {
+        // Clear auth state
+        AuthManager.shared.logout()
+
+        // Reset flow state
+        authMethod = .none
+        email = ""
+        password = ""
+        appleUserID = ""
+        googleUserID = ""
+        authToken = ""
+        userId = ""
+        firstName = ""
+        username = ""
+
+        // Go back to welcome screen
+        step = .welcome
+    }
 
     func goToFeed() {
         step = .feed

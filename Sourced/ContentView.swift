@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var flow: OnboardingFlow
+    @StateObject private var authManager = AuthManager.shared
 
     var body: some View {
         ZStack {
@@ -38,6 +39,12 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(.light)
+        .onAppear {
+            // Check if user is already authenticated
+            if authManager.isAuthenticated {
+                flow.step = .feed
+            }
+        }
     }
 }
 
