@@ -28,6 +28,16 @@
 				<string>com.googleusercontent.apps.247965599864-1tfv3nq9totmo5ap772cbunq0fsnmght</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.ryankemmer.sourced.pinterest</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.ryankemmer.sourced</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

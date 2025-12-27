@@ -10,8 +10,7 @@ import PhotosUI
 
 struct PinterestOAuthScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
-    @State private var isAuthorizing: Bool = false
-    @State private var authError: String?
+    @StateObject private var pinterestAuth = PinterestAuthService()
 
     var body: some View {
         OnboardingShell(
@@ -56,7 +55,7 @@ struct PinterestOAuthScreen: View {
                         .padding(14)
                     )
 
-                if let authError {
+                if let authError = pinterestAuth.authError {
                     Text(authError)
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.red.opacity(0.9))
@@ -66,12 +65,17 @@ struct PinterestOAuthScreen: View {
                     startPinterestOAuth()
                 } label: {
                     HStack {
-                        Image(systemName: "p.circle")
-                        Text(isAuthorizing ? "Connecting…" : "Connect Pinterest")
+                        if pinterestAuth.isAuthenticating {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "p.circle")
+                        }
+                        Text(pinterestAuth.isAuthenticating ? "Connecting…" : "Connect Pinterest")
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
-                .disabled(isAuthorizing)
+                .disabled(pinterestAuth.isAuthenticating)
 
                 Button {
                     flow.step = .styleProfile
@@ -91,14 +95,23 @@ struct PinterestOAuthScreen: View {
     }
 
     private func startPinterestOAuth() {
-        isAuthorizing = true
-        authError = nil
+        pinterestAuth.authenticate { result in
+            switch result {
+            case .success(let authData):
+                print("Pinterest auth successful!")
+                print("Access token: \(authData.accessToken)")
+                if let refreshToken = authData.refreshToken {
+                    print("Refresh token: \(refreshToken)")
+                }
 
-        // TODO: replace with real ASWebAuthenticationSession Pinterest OAuth
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.isAuthorizing = false
-            self.flow.connectedPinterest = true
-            self.flow.step = .styleProfile
+                // Mark Pinterest as connected and proceed
+                flow.connectedPinterest = true
+                flow.step = .styleProfile
+
+            case .failure(let error):
+                print("Pinterest auth failed: \(error)")
+                // Error is already set in pinterestAuth.authError
+            }
         }
     }
 }

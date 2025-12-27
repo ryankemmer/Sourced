@@ -13,6 +13,13 @@ enum Config {
     static let googleClientID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
     static let googleReversedClientID = "com.googleusercontent.apps.YOUR_REVERSED_CLIENT_ID"
 
+    // Pinterest OAuth
+    static let pinterestAppID = "YOUR_PINTEREST_APP_ID"
+    static let pinterestAppSecret = "YOUR_PINTEREST_APP_SECRET"
+    static let pinterestRedirectURI = "com.ryankemmer.sourced://pinterest-callback"
+    static let pinterestScopes = "boards:read,boards:read_secret,pins:read,pins:read_secret,user_accounts:read"
+
     // API Endpoints
     static let authEndpoint = "https://YOUR_API_GATEWAY_URL/prod/auth"
+    static let pinterestTokenEndpoint = "https://YOUR_API_GATEWAY_URL/prod/pinterest-auth"
 }
