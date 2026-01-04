@@ -123,6 +123,14 @@ struct WelcomeScreen: View {
 
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
+                // Check if user cancelled (error code -5 is cancellation)
+                let nsError = error as NSError
+                if nsError.domain == "com.google.GIDSignIn" && nsError.code == -5 {
+                    print("Google Sign-In cancelled by user")
+                    // Don't show error for cancellation
+                    return
+                }
+
                 print("Google Sign-In error: \(error.localizedDescription)")
                 flow.authError = "Google Sign-In failed: \(error.localizedDescription)"
                 return
@@ -182,6 +190,14 @@ class SignInWithAppleCoordinator: NSObject, ASAuthorizationControllerDelegate, A
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        // Check if user cancelled
+        if let authError = error as? ASAuthorizationError,
+           authError.code == .canceled {
+            print("Sign in with Apple cancelled by user")
+            // Don't show error for cancellation
+            return
+        }
+
         print("Sign in with Apple error: \(error.localizedDescription)")
         flow.authError = "Apple Sign-In failed: \(error.localizedDescription)"
     }
@@ -252,37 +268,142 @@ struct BasicProfileScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
     @State private var firstName: String = ""
     @State private var username: String = ""
+    @State private var selectedPhoto: UIImage?
+    @State private var showingImagePicker = false
+    @State private var imageSourceType: UIImagePickerController.SourceType = .photoLibrary
+    @State private var showError: Bool = false
+
+    private var isFirstNameEmpty: Bool {
+        firstName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var isUsernameEmpty: Bool {
+        username.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         OnboardingShell(
             title: "Who's thrifting?",
             subtitle: "We'll use this to personalize your experience. You can change it later.",
             showBack: true,
-            backAction: { flow.step = .emailAuth }
+            backAction: { flow.step = .welcome }
         ) {
             VStack(spacing: 18) {
                 TextField("First name", text: $firstName)
                     .textContentType(.givenName)
                     .autocapitalization(.words)
                     .modifier(OnboardingTextField())
+                    .onChange(of: firstName) { _ in
+                        if showError { showError = false }
+                    }
 
-                TextField("Username (optional)", text: $username)
+                TextField("Username", text: $username)
                     .autocapitalization(.none)
                     .modifier(OnboardingTextField())
+                    .onChange(of: username) { _ in
+                        if showError { showError = false }
+                    }
+
+                // Profile photo section
+                VStack(spacing: 12) {
+                    if let photo = selectedPhoto {
+                        Image(uiImage: photo)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 80, height: 80)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                            )
+                    } else {
+                        Circle()
+                            .fill(Color.black.opacity(0.05))
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.black.opacity(0.3))
+                            )
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            imageSourceType = .photoLibrary
+                            showingImagePicker = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo")
+                                    .font(.system(size: 12))
+                                Text("Upload")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+
+                        Button {
+                            imageSourceType = .camera
+                            showingImagePicker = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "camera")
+                                    .font(.system(size: 12))
+                                Text("Take Photo")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+
+                    Text("Optional")
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundColor(.black.opacity(0.5))
+                }
+                .padding(.top, 8)
 
                 VStack(spacing: 12) {
+                    if showError {
+                        Text("Please enter your first name and username")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                    }
+
                     Button {
-                        flow.firstName = firstName
-                        flow.username = username
-                        flow.step = .personalizationChoice
+                        if isFirstNameEmpty || isUsernameEmpty {
+                            showError = true
+                        } else {
+                            flow.firstName = firstName
+                            flow.username = username
+                            flow.profilePhoto = selectedPhoto
+                            flow.step = .personalizationChoice
+                        }
                     } label: {
                         Text("Continue")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 .padding(.top, 10)
             }
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(image: $selectedPhoto, sourceType: imageSourceType)
         }
     }
 }
@@ -374,6 +495,46 @@ struct PersonalizationChoiceScreen: View {
                 .foregroundColor(.black.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
+        }
+    }
+}
+
+// MARK: - Image Picker
+
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var image: UIImage?
+    var sourceType: UIImagePickerController.SourceType
+    @Environment(\.dismiss) var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: ImagePicker
+
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let uiImage = info[.originalImage] as? UIImage {
+                parent.image = uiImage
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }

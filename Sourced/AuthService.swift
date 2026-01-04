@@ -19,11 +19,27 @@ struct AuthRequest: Codable {
     let authMechanism: String
 }
 
+struct AuthUser: Codable {
+    let userId: String
+    let email: String
+    let authMechanism: String?
+    let authProviderId: String?
+    let createdAt: String?
+}
+
 struct AuthResponse: Codable {
-    let success: Bool
-    let message: String?
-    let userId: String?
+    let message: String
+    let user: AuthUser?
     let token: String?
+
+    // Computed properties for backwards compatibility
+    var success: Bool {
+        return user != nil
+    }
+
+    var userId: String? {
+        return user?.userId
+    }
 }
 
 struct ErrorResponse: Codable {
@@ -88,18 +104,18 @@ class AuthService {
 
             // Accept any 2xx status code as success
             if (200...299).contains(httpResponse.statusCode) {
-                // Try to decode the response, but if it fails, just return success
+                // Try to decode the response, but if it fails, throw error
                 if let authResponse = try? JSONDecoder().decode(AuthResponse.self, from: data) {
                     return authResponse
                 } else {
-                    // If we can't decode the response, just return a successful response
-                    return AuthResponse(success: true, message: nil, userId: nil, token: nil)
+                    // If we can't decode the response, throw error with response body
+                    let responseBody = String(data: data, encoding: .utf8) ?? "Unknown response"
+                    throw AuthError.serverError("Failed to parse response: \(responseBody)")
                 }
             } else {
                 // Try to decode error message from backend in different formats
-                if let errorResponse = try? JSONDecoder().decode(AuthResponse.self, from: data),
-                   let message = errorResponse.message {
-                    throw AuthError.serverError(message)
+                if let errorResponse = try? JSONDecoder().decode(AuthResponse.self, from: data) {
+                    throw AuthError.serverError(errorResponse.message)
                 } else if let errorResponse = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
                     throw AuthError.serverError(errorResponse.error)
                 } else if let errorString = String(data: data, encoding: .utf8), !errorString.isEmpty {

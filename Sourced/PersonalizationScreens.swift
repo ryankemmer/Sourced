@@ -95,6 +95,15 @@ struct PinterestOAuthScreen: View {
     }
 
     private func startPinterestOAuth() {
+        // Ensure user is authenticated before connecting Pinterest
+        guard !flow.userId.isEmpty else {
+            print("ERROR: Cannot connect Pinterest - userId is empty. User must authenticate first.")
+            pinterestAuth.authError = "Please complete authentication first"
+            return
+        }
+
+        print("Starting Pinterest OAuth with userId: \(flow.userId)")
+
         pinterestAuth.authenticate { result in
             switch result {
             case .success(let authData):
@@ -104,15 +113,265 @@ struct PinterestOAuthScreen: View {
                     print("Refresh token: \(refreshToken)")
                 }
 
-                // Mark Pinterest as connected and proceed
+                // Save Pinterest auth data to flow
+                flow.pinterestAccessToken = authData.accessToken
+                flow.pinterestRefreshToken = authData.refreshToken ?? ""
+                flow.pinterestTokenExpiresIn = authData.expiresIn ?? 0
+                flow.pinterestScope = authData.scope ?? ""
+
+                // Mark Pinterest as connected and proceed to board selection
                 flow.connectedPinterest = true
-                flow.step = .styleProfile
+                flow.step = .selectPinterestBoard
 
             case .failure(let error):
                 print("Pinterest auth failed: \(error)")
                 // Error is already set in pinterestAuth.authError
             }
         }
+    }
+}
+
+// MARK: - Select Pinterest Board
+
+struct SelectPinterestBoardScreen: View {
+    @EnvironmentObject var flow: OnboardingFlow
+    @State private var isLoadingBoards = false
+    @State private var loadError: String?
+
+    var body: some View {
+        OnboardingShell(
+            title: "Select boards",
+            subtitle: "Choose which boards we should analyze to understand your style. You can select multiple.",
+            showBack: true,
+            backAction: { flow.step = .pinterestOAuth }
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                if isLoadingBoards {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .scaleEffect(1.2)
+                        Text("Loading your boards...")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.black.opacity(0.7))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                } else if let error = loadError {
+                    VStack(spacing: 12) {
+                        Text(error)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                        Button {
+                            loadBoards()
+                        } label: {
+                            Text("Try again")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+                    .padding(.vertical, 20)
+                } else if flow.pinterestBoards.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("No boards found")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundColor(.black.opacity(0.7))
+                        Button {
+                            flow.step = .styleProfile
+                        } label: {
+                            Text("Skip to style profile")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+                    .padding(.vertical, 20)
+                } else {
+                    // Selected boards count
+                    if !flow.selectedPinterestBoards.isEmpty {
+                        Text("\(flow.selectedPinterestBoards.count) board\(flow.selectedPinterestBoards.count == 1 ? "" : "s") selected")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.black.opacity(0.6))
+                    }
+
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(flow.pinterestBoards) { board in
+                                let isSelected = flow.selectedPinterestBoards.contains(board.id)
+                                Button {
+                                    toggleBoard(board)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        // Board preview with pin images
+                                        BoardPreviewGrid(board: board)
+                                            .frame(width: 60, height: 60)
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(board.name)
+                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                                .foregroundColor(.black)
+
+                                            Text("\(board.pinCount) pins")
+                                                .font(.system(size: 12, weight: .regular, design: .rounded))
+                                                .foregroundColor(.black.opacity(0.6))
+
+                                            if let description = board.description, !description.isEmpty {
+                                                Text(description)
+                                                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                                                    .foregroundColor(.black.opacity(0.5))
+                                                    .lineLimit(2)
+                                            }
+                                        }
+
+                                        Spacer()
+
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.black)
+                                                .font(.system(size: 22))
+                                        } else {
+                                            Image(systemName: "circle")
+                                                .foregroundColor(.black.opacity(0.2))
+                                                .font(.system(size: 22))
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(isSelected ? Color.black.opacity(0.03) : Color.white)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(isSelected ? Color.black.opacity(0.4) : Color.black.opacity(0.25), lineWidth: 1)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        continueWithSelectedBoards()
+                    } label: {
+                        Text("Continue")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(flow.selectedPinterestBoards.isEmpty)
+                    .padding(.top, 8)
+                }
+
+                Button {
+                    flow.step = .styleProfile
+                } label: {
+                    Text("Skip for now")
+                        .foregroundColor(.black.opacity(0.8))
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                }
+                .padding(.top, 8)
+            }
+        }
+        .onAppear {
+            if flow.pinterestBoards.isEmpty && !isLoadingBoards {
+                loadBoards()
+            }
+        }
+    }
+
+    private func loadBoards() {
+        isLoadingBoards = true
+        loadError = nil
+
+        Task {
+            do {
+                // Validate required data
+                guard !flow.userId.isEmpty else {
+                    await MainActor.run {
+                        loadError = "User ID is missing. Please restart authentication."
+                        isLoadingBoards = false
+                        print("ERROR: userId is empty!")
+                    }
+                    return
+                }
+
+                guard !flow.pinterestAccessToken.isEmpty else {
+                    await MainActor.run {
+                        loadError = "Pinterest access token is missing. Please reconnect Pinterest."
+                        isLoadingBoards = false
+                        print("ERROR: pinterestAccessToken is empty!")
+                    }
+                    return
+                }
+
+                print("=== Fetching Pinterest Boards ===")
+                print("userId: \(flow.userId)")
+                print("accessToken: \(flow.pinterestAccessToken.prefix(20))...")
+                print("refreshToken: \(flow.pinterestRefreshToken.isEmpty ? "empty" : "present")")
+
+                // Calculate token expiration times if needed
+                let accessTokenExpiresAt: String?
+                if flow.pinterestTokenExpiresIn > 0 {
+                    let expiryDate = Date().addingTimeInterval(TimeInterval(flow.pinterestTokenExpiresIn))
+                    accessTokenExpiresAt = ISO8601DateFormatter().string(from: expiryDate)
+                } else {
+                    accessTokenExpiresAt = nil
+                }
+
+                let boards = try await PinterestBoardsService.shared.fetchBoards(
+                    userId: flow.userId,
+                    accessToken: flow.pinterestAccessToken,
+                    refreshToken: flow.pinterestRefreshToken.isEmpty ? nil : flow.pinterestRefreshToken,
+                    expiresIn: flow.pinterestTokenExpiresIn > 0 ? flow.pinterestTokenExpiresIn : nil,
+                    accessTokenExpiresAt: accessTokenExpiresAt,
+                    refreshTokenExpiresIn: nil,
+                    refreshTokenExpiresAt: nil
+                )
+
+                await MainActor.run {
+                    flow.pinterestBoards = boards
+                    isLoadingBoards = false
+                    print("Loaded \(boards.count) boards")
+                }
+            } catch let error as PinterestBoardsError {
+                await MainActor.run {
+                    switch error {
+                    case .invalidURL:
+                        loadError = "Invalid API endpoint"
+                    case .invalidResponse:
+                        loadError = "Invalid response from server"
+                    case .serverError(let message):
+                        loadError = "Server error: \(message)"
+                    case .networkError(let err):
+                        loadError = "Network error: \(err.localizedDescription)"
+                    }
+                    isLoadingBoards = false
+                }
+            } catch {
+                await MainActor.run {
+                    loadError = "Failed to load boards: \(error.localizedDescription)"
+                    isLoadingBoards = false
+                }
+            }
+        }
+    }
+
+    private func toggleBoard(_ board: PinterestBoard) {
+        if flow.selectedPinterestBoards.contains(board.id) {
+            flow.selectedPinterestBoards.remove(board.id)
+            print("Deselected board: \(board.name)")
+        } else {
+            flow.selectedPinterestBoards.insert(board.id)
+            print("Selected board: \(board.name)")
+        }
+        print("Total selected boards: \(flow.selectedPinterestBoards.count)")
+    }
+
+    private func continueWithSelectedBoards() {
+        let selectedBoardNames = flow.pinterestBoards
+            .filter { flow.selectedPinterestBoards.contains($0.id) }
+            .map { $0.name }
+
+        print("=== Continuing with selected boards ===")
+        print("Board IDs: \(flow.selectedPinterestBoards)")
+        print("Board names: \(selectedBoardNames)")
+
+        // TODO: Send selected boards to backend for processing
+
+        flow.step = .styleProfile
     }
 }
 
@@ -261,49 +520,75 @@ struct OutfitUploadScreen: View {
 
 struct StyleProfileScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
+    @State private var searchText: String = ""
 
-    private let brandOptions = [
-        "Levi’s", "Nike", "Zara", "COS", "Everlane", "Arket", "Vintage", "Designer"
-    ]
-
-    private let fabricOptions = [
-        "Denim", "Cotton", "Linen", "Wool", "Leather", "Silk", "Fleece"
-    ]
-
-    private let aestheticOptions = [
-        "Minimal", "Streetwear", "Y2K", "Vintage", "Clean classics", "Techwear", "Soft grunge"
-    ]
+    var filteredBrands: [String] {
+        if searchText.isEmpty {
+            return availableBrands
+        }
+        return availableBrands.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         OnboardingShell(
-            title: "Lock in your fit",
-            subtitle: "We’ll match you with secondhand finds that actually fit and feel like you.",
+            title: "Tell us your brand preferences",
+            subtitle: "Help us understand which brands resonate with your style so we can curate the perfect secondhand finds for you.",
             showBack: true,
             backAction: {
                 if flow.prefersUpload {
                     flow.step = .uploadOutfits
                 } else if flow.prefersPinterest {
-                    flow.step = .pinterestOAuth
+                    flow.step = .selectPinterestBoard
                 } else {
                     flow.step = .personalizationChoice
                 }
             }
         ) {
-            VStack(alignment: .leading, spacing: 20) {
-                SectionHeader("Favorite brands") {
-                    Text("Think pieces you reach for over and over.")
-                }
-                WrapChips(options: brandOptions, selected: $flow.selectedBrands)
+            VStack(alignment: .leading, spacing: 16) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.black.opacity(0.4))
+                        .font(.system(size: 14))
 
-                SectionHeader("Fabrics you love") {
-                    Text("We'll prioritize pieces in these materials.")
+                    TextField("Search brands...", text: $searchText)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundColor(.black)
+                        .autocapitalization(.none)
                 }
-                WrapChips(options: fabricOptions, selected: $flow.selectedFabrics)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                )
 
-                SectionHeader("Your aesthetic keywords") {
-                    Text("We'll use this to style your feed and alerts.")
+                // Selected brands count
+                if !flow.selectedBrands.isEmpty {
+                    Text("\(flow.selectedBrands.count) brand\(flow.selectedBrands.count == 1 ? "" : "s") selected")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.black.opacity(0.6))
                 }
-                WrapChips(options: aestheticOptions, selected: $flow.selectedAesthetics)
+
+                // Brand list
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(filteredBrands, id: \.self) { brand in
+                            BrandRow(
+                                brand: brand,
+                                isSelected: flow.selectedBrands.contains(brand),
+                                onToggle: {
+                                    if flow.selectedBrands.contains(brand) {
+                                        flow.selectedBrands.remove(brand)
+                                    } else {
+                                        flow.selectedBrands.insert(brand)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Button {
                     flow.step = .sizingProfile
@@ -313,6 +598,42 @@ struct StyleProfileScreen: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 10)
             }
+        }
+    }
+}
+
+struct BrandRow: View {
+    let brand: String
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack {
+                Text(brand)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(.black)
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.black)
+                        .font(.system(size: 18))
+                } else {
+                    Image(systemName: "circle")
+                        .foregroundColor(.black.opacity(0.2))
+                        .font(.system(size: 18))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(isSelected ? Color.black.opacity(0.03) : Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? Color.black.opacity(0.4) : Color.black.opacity(0.15), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 }
@@ -433,113 +754,99 @@ struct VibeLoadingScreen: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                 progress = 1.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    flow.step = .styleSummary
+                    flow.step = .feed
                 }
             }
         }
     }
 }
 
-// MARK: - Style Summary
+// MARK: - Board Preview Grid
 
-struct StyleSummaryScreen: View {
-    @EnvironmentObject var flow: OnboardingFlow
+struct BoardPreviewGrid: View {
+    let board: PinterestBoard
 
     var body: some View {
-        OnboardingShell(
-            title: "Here’s what we picked up",
-            subtitle: "We’ll use this to power your personalized thrift feed.",
-            showBack: false
-        ) {
-            VStack(alignment: .leading, spacing: 18) {
-                SummaryCard(
-                    title: "Core style lanes",
-                    items: Array(flow.selectedAesthetics.isEmpty
-                                 ? ["Clean classics", "Modern vintage"]
-                                 : flow.selectedAesthetics)
+        let pinImages = board.pinImages.prefix(4)
+
+        if pinImages.isEmpty {
+            // Fallback placeholder if no images
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.05))
+                .overlay(
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .foregroundColor(.black.opacity(0.4))
+                        .font(.system(size: 18))
                 )
-
-                SummaryCard(
-                    title: "Brands + labels to prioritize",
-                    items: Array(flow.selectedBrands.isEmpty
-                                 ? ["Premium denim", "Quality basics", "Under-the-radar designers"]
-                                 : flow.selectedBrands)
-                )
-
-                SummaryCard(
-                    title: "Fabrics & textures",
-                    items: Array(flow.selectedFabrics.isEmpty
-                                 ? ["Denim", "Cotton", "Wool"]
-                                 : flow.selectedFabrics)
-                )
-
-                SummaryCard(
-                    title: "Sizing snapshot",
-                    items: sizingSnapshot
-                )
-
-                Button {
-                    flow.goToFeed()
-                } label: {
-                    Text("Start thrifting")
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(.top, 10)
-            }
-        }
-    }
-
-    private var sizingSnapshot: [String] {
-        if flow.sizingGender == .mens {
-            return [
-                "Shirt: \(flow.mensSizes.shirt.ifEmpty("Not set"))",
-                "Pants: \(flow.mensSizes.pants.ifEmpty("Not set"))",
-                "Jacket: \(flow.mensSizes.jacket.ifEmpty("Not set"))",
-                "Shoes: \(flow.mensSizes.shoes.ifEmpty("Not set"))"
-            ]
         } else {
-            return [
-                "Shirt: \(flow.womensSizes.shirt.ifEmpty("Not set"))",
-                "Pants: \(flow.womensSizes.pants.ifEmpty("Not set"))",
-                "Jacket: \(flow.womensSizes.jacket.ifEmpty("Not set"))",
-                "Sweaters: \(flow.womensSizes.sweaters.ifEmpty("Not set"))",
-                "Shoes: \(flow.womensSizes.shoes.ifEmpty("Not set"))",
-                "Handbags: \(flow.womensSizes.handbags.ifEmpty("Not set"))",
-                "Dress: \(flow.womensSizes.dress.ifEmpty("Not set"))",
-                "Skirt: \(flow.womensSizes.skirt.ifEmpty("Not set"))"
-            ]
-        }
-    }
-}
+            // 2x2 grid of pin images
+            VStack(spacing: 2) {
+                HStack(spacing: 2) {
+                    if pinImages.count > 0 {
+                        AsyncImage(url: URL(string: pinImages[0])) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Color.black.opacity(0.05)
+                        }
+                        .frame(width: 29, height: 29)
+                        .clipped()
+                    }
 
-struct SummaryCard: View {
-    let title: String
-    let items: [String]
+                    if pinImages.count > 1 {
+                        AsyncImage(url: URL(string: pinImages[1])) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Color.black.opacity(0.05)
+                        }
+                        .frame(width: 29, height: 29)
+                        .clipped()
+                    } else {
+                        Color.black.opacity(0.05)
+                            .frame(width: 29, height: 29)
+                    }
+                }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.black)
+                HStack(spacing: 2) {
+                    if pinImages.count > 2 {
+                        AsyncImage(url: URL(string: pinImages[2])) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Color.black.opacity(0.05)
+                        }
+                        .frame(width: 29, height: 29)
+                        .clipped()
+                    } else {
+                        Color.black.opacity(0.05)
+                            .frame(width: 29, height: 29)
+                    }
 
-            ForEach(items, id: \.self) { item in
-                HStack(alignment: .top, spacing: 6) {
-                    Circle()
-                        .fill(Color.black)
-                        .frame(width: 4, height: 4)
-                        .padding(.top, 6)
-                    Text(item)
-                        .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundColor(.black.opacity(0.8))
+                    if pinImages.count > 3 {
+                        AsyncImage(url: URL(string: pinImages[3])) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Color.black.opacity(0.05)
+                        }
+                        .frame(width: 29, height: 29)
+                        .clipped()
+                    } else {
+                        Color.black.opacity(0.05)
+                            .frame(width: 29, height: 29)
+                    }
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.black.opacity(0.15), lineWidth: 1)
+            )
         }
-        .padding(14)
-        .background(Color.white)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.black.opacity(0.25), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

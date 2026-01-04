@@ -24,6 +24,8 @@ struct ContentView: View {
                 PersonalizationChoiceScreen()
             case .pinterestOAuth:
                 PinterestOAuthScreen()
+            case .selectPinterestBoard:
+                SelectPinterestBoardScreen()
             case .uploadOutfits:
                 OutfitUploadScreen()
             case .styleProfile:
@@ -32,8 +34,6 @@ struct ContentView: View {
                 SizingProfileScreen()
             case .vibeLoading:
                 VibeLoadingScreen()
-            case .styleSummary:
-                StyleSummaryScreen()
             case .feed:
                 PersonalizedFeedScreen()
             }
@@ -42,6 +42,11 @@ struct ContentView: View {
         .onAppear {
             // Check if user is already authenticated
             if authManager.isAuthenticated {
+                // Restore userId from saved state
+                if let savedUserId = authManager.currentUserId {
+                    flow.userId = savedUserId
+                    print("Restored userId from AuthManager: \(savedUserId)")
+                }
                 flow.step = .feed
             }
         }

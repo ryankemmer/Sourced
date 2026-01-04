@@ -150,6 +150,7 @@ struct TagChip: View {
         Text(text)
             .font(.system(size: 13, weight: .medium, design: .rounded))
             .foregroundColor(isSelected ? .white : .black)
+            .lineLimit(1)
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(isSelected ? Color.black : Color.white)
@@ -158,6 +159,7 @@ struct TagChip: View {
                     .stroke(Color.black.opacity(0.35), lineWidth: 1)
             )
             .clipShape(Capsule())
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -206,7 +208,7 @@ struct WrapChips: View {
     @Binding var selected: Set<String>
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 80, maximum: 200), spacing: 8)], alignment: .leading, spacing: 8) {
+        FlowLayout(spacing: 8) {
             ForEach(options, id: \.self) { item in
                 let isSelected = selected.contains(item)
                 Button {
@@ -219,6 +221,57 @@ struct WrapChips: View {
                     TagChip(text: item, isSelected: isSelected)
                 }
             }
+        }
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(
+            in: proposal.replacingUnspecifiedDimensions().width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(
+            in: bounds.width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x, y: bounds.minY + result.positions[index].y), proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var size: CGSize = .zero
+        var positions: [CGPoint] = []
+
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += rowHeight + spacing
+                    rowHeight = 0
+                }
+
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+            }
+
+            self.size = CGSize(width: maxWidth, height: y + rowHeight)
         }
     }
 }
@@ -255,14 +308,81 @@ struct SizeGridMens: View {
     @Binding var mens: MensSizes
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack {
-                SizeField(title: "Shirt", placeholder: "M / 40", text: $mens.shirt)
-                SizeField(title: "Pants", placeholder: "32x32", text: $mens.pants)
+        VStack(spacing: 16) {
+            SizePickerRow(title: "Tops", options: MensSizes.topsOptions, selection: $mens.tops)
+            SizePickerRow(title: "Bottoms", options: MensSizes.bottomsOptions, selection: $mens.bottoms)
+            SizePickerRow(title: "Outerwear", options: MensSizes.outerwearOptions, selection: $mens.outerwear)
+            SizePickerRow(title: "Footwear", options: MensSizes.footwearOptions, selection: $mens.footwear)
+            SizePickerRow(title: "Tailoring", options: MensSizes.tailoringOptions, selection: $mens.tailoring)
+            SizePickerRow(title: "Accessories", options: MensSizes.accessoriesOptions, selection: $mens.accessories)
+        }
+    }
+}
+
+struct SizePickerRow: View {
+    let title: String
+    let options: [String]
+    @Binding var selection: String
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with title and selected value
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.black)
+
+                    Spacer()
+
+                    Text(selection.isEmpty ? "Select" : selection)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(selection.isEmpty ? .black.opacity(0.4) : .black)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.4))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.black.opacity(0.25), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            HStack {
-                SizeField(title: "Jacket", placeholder: "40R", text: $mens.jacket)
-                SizeField(title: "Shoes", placeholder: "10.5", text: $mens.shoes)
+
+            // Expandable options
+            if isExpanded {
+                FlowLayout(spacing: 8) {
+                    ForEach(options, id: \.self) { option in
+                        Button {
+                            selection = option
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded = false
+                            }
+                        } label: {
+                            Text(option)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundColor(selection == option ? .white : .black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(selection == option ? Color.black : Color.white)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.black.opacity(0.25), lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                }
+                .padding(.top, 4)
             }
         }
     }
@@ -272,23 +392,11 @@ struct SizeGridWomens: View {
     @Binding var womens: WomensSizes
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack {
-                SizeField(title: "Shirt", placeholder: "S / 4", text: $womens.shirt)
-                SizeField(title: "Pants", placeholder: "26 / 2", text: $womens.pants)
-            }
-            HStack {
-                SizeField(title: "Jacket", placeholder: "S / 4", text: $womens.jacket)
-                SizeField(title: "Sweaters", placeholder: "S / M", text: $womens.sweaters)
-            }
-            HStack {
-                SizeField(title: "Shoes", placeholder: "7.5", text: $womens.shoes)
-                SizeField(title: "Handbags", placeholder: "Med / Lg", text: $womens.handbags)
-            }
-            HStack {
-                SizeField(title: "Dress", placeholder: "4 / S", text: $womens.dress)
-                SizeField(title: "Skirt", placeholder: "26 / 2", text: $womens.skirt)
-            }
+        VStack(spacing: 16) {
+            SizePickerRow(title: "Tops", options: WomensSizes.topsOptions, selection: $womens.tops)
+            SizePickerRow(title: "Bottoms", options: WomensSizes.bottomsOptions, selection: $womens.bottoms)
+            SizePickerRow(title: "Outerwear", options: WomensSizes.outerwearOptions, selection: $womens.outerwear)
+            SizePickerRow(title: "Dresses", options: WomensSizes.dressesOptions, selection: $womens.dresses)
         }
     }
 }

@@ -119,12 +119,24 @@ class PinterestAuthService: NSObject, ObservableObject {
                success == "true" {
                 print("Pinterest auth successful (handled by backend)")
 
-                // Create dummy auth data since backend handled it
+                // Extract actual tokens from callback URL
+                let accessToken = components.queryItems?.first(where: { $0.name == "access_token" })?.value ?? ""
+                let refreshToken = components.queryItems?.first(where: { $0.name == "refresh_token" })?.value
+                let expiresInStr = components.queryItems?.first(where: { $0.name == "expires_in" })?.value
+                let expiresIn = expiresInStr.flatMap { Int($0) }
+                let scope = components.queryItems?.first(where: { $0.name == "scope" })?.value
+
+                print("Extracted tokens from callback:")
+                print("  - access_token: \(accessToken.isEmpty ? "MISSING" : "present (\(accessToken.prefix(20))...)")")
+                print("  - refresh_token: \(refreshToken != nil ? "present" : "nil")")
+                print("  - expires_in: \(expiresIn?.description ?? "nil")")
+                print("  - scope: \(scope ?? "nil")")
+
                 let authData = PinterestAuthData(
-                    accessToken: "handled_by_backend",
-                    refreshToken: nil,
-                    expiresIn: nil,
-                    scope: nil
+                    accessToken: accessToken,
+                    refreshToken: refreshToken,
+                    expiresIn: expiresIn,
+                    scope: scope
                 )
 
                 Task { @MainActor in

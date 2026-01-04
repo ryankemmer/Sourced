@@ -13,10 +13,8 @@ class AuthManager: ObservableObject {
 
     @Published var isAuthenticated: Bool = false
     @Published var currentUserId: String?
-    @Published var authToken: String?
 
     private let userDefaults = UserDefaults.standard
-    private let tokenKey = "authToken"
     private let userIdKey = "userId"
 
     private init() {
@@ -25,31 +23,20 @@ class AuthManager: ObservableObject {
 
     // Load saved auth state on app launch
     func loadAuthState() {
-        authToken = userDefaults.string(forKey: tokenKey)
         currentUserId = userDefaults.string(forKey: userIdKey)
-        isAuthenticated = authToken != nil
+        isAuthenticated = currentUserId != nil
     }
 
     // Save auth state after successful login
-    func saveAuthState(token: String?, userId: String?) {
-        if let token = token {
-            userDefaults.set(token, forKey: tokenKey)
-        }
-        if let userId = userId {
-            userDefaults.set(userId, forKey: userIdKey)
-        }
-
-        self.authToken = token
+    func saveAuthState(userId: String) {
+        userDefaults.set(userId, forKey: userIdKey)
         self.currentUserId = userId
-        self.isAuthenticated = token != nil
+        self.isAuthenticated = true
     }
 
     // Clear auth state on logout
     func logout() {
-        userDefaults.removeObject(forKey: tokenKey)
         userDefaults.removeObject(forKey: userIdKey)
-
-        authToken = nil
         currentUserId = nil
         isAuthenticated = false
     }
