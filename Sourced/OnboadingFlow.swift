@@ -19,6 +19,9 @@ final class OnboardingFlow: ObservableObject {
             case sizingProfile
             case vibeLoading
             case feed
+            case editProfile
+            case editBrands
+            case editSizing
         }
 
     @Published var step: Step = .welcome
@@ -50,6 +53,7 @@ final class OnboardingFlow: ObservableObject {
     // Personalization choices
     @Published var prefersPinterest: Bool = false
     @Published var prefersUpload: Bool = false
+    @Published var isEditingPreferences: Bool = false  // Track if user is editing from profile
     @Published var connectedPinterest: Bool = false
     @Published var uploadedImageCount: Int = 0
 
@@ -63,8 +67,6 @@ final class OnboardingFlow: ObservableObject {
 
     // Style profile
     @Published var selectedBrands: Set<String> = []
-    @Published var selectedFabrics: Set<String> = []
-    @Published var selectedAesthetics: Set<String> = []
     @Published var sizingGender: SizingGender = .mens
     @Published var mensSizes = MensSizes()
     @Published var womensSizes = WomensSizes()
@@ -111,21 +113,23 @@ final class OnboardingFlow: ObservableObject {
                 mechanism: mechanism
             )
 
-            await MainActor.run {
-                if response.success, let responseUserId = response.userId, !responseUserId.isEmpty {
+            if response.success, let responseUserId = response.userId, !responseUserId.isEmpty {
+                await MainActor.run {
                     userId = responseUserId
-
                     print("=== Authentication Successful ===")
                     print("userId: \(userId)")
 
                     // Save userId to persist login
                     AuthManager.shared.saveAuthState(userId: userId)
-
-                    step = .basicProfile
-                } else {
-                    authError = response.message ?? "Authentication failed"
                 }
-                isAuthenticating = false
+
+                // Fetch user profile to check onboarding status
+                await fetchProfileAndNavigate()
+            } else {
+                await MainActor.run {
+                    authError = response.message ?? "Authentication failed"
+                    isAuthenticating = false
+                }
             }
         } catch let error as AuthError {
             await MainActor.run {
@@ -149,7 +153,86 @@ final class OnboardingFlow: ObservableObject {
         }
     }
 
+    private func fetchProfileAndNavigate() async {
+        do {
+            if let profile = try await ProfileService.shared.fetchProfile(userId: userId) {
+                // Load profile photo if available (do this before MainActor to not block UI)
+                var loadedImage: UIImage?
+                if let photoString = profile.profilePhoto, !photoString.isEmpty {
+                    loadedImage = await loadProfileImage(from: photoString)
+                }
+
+                await MainActor.run {
+                    // Populate flow with profile data
+                    if let fn = profile.firstName, !fn.isEmpty {
+                        firstName = fn
+                    }
+                    if let un = profile.username, !un.isEmpty {
+                        username = un
+                    }
+                    if let image = loadedImage {
+                        profilePhoto = image
+                        ImageCache.shared.saveImage(image, forKey: "profile_\(userId)")
+                    }
+                    if let boards = profile.selectedPinterestBoards {
+                        selectedPinterestBoards = Set(boards)
+                    }
+                    if let brands = profile.selectedBrands {
+                        selectedBrands = Set(brands)
+                    }
+                    if let gender = profile.sizingGender {
+                        sizingGender = SizingGender.fromAPI(gender)
+                    }
+                    if let mens = profile.mensSizes {
+                        mensSizes.tops = mens.tops ?? ""
+                        mensSizes.bottoms = mens.bottoms ?? ""
+                        mensSizes.outerwear = mens.outerwear ?? ""
+                        mensSizes.footwear = mens.footwear ?? ""
+                        mensSizes.tailoring = mens.tailoring ?? ""
+                        mensSizes.accessories = mens.accessories ?? ""
+                    }
+                    if let womens = profile.womensSizes {
+                        womensSizes.tops = womens.tops ?? ""
+                        womensSizes.bottoms = womens.bottoms ?? ""
+                        womensSizes.outerwear = womens.outerwear ?? ""
+                        womensSizes.dresses = womens.dresses ?? ""
+                    }
+
+                    // Check if onboarding is complete
+                    if profile.onboardingComplete == true {
+                        print("Onboarding complete, going to feed")
+                        AuthManager.shared.setOnboardingComplete(true)
+                        step = .feed
+                    } else {
+                        print("Onboarding not complete, starting onboarding")
+                        step = .basicProfile
+                    }
+                    isAuthenticating = false
+                }
+            } else {
+                // No profile found, start onboarding
+                await MainActor.run {
+                    print("No profile found, starting onboarding")
+                    step = .basicProfile
+                    isAuthenticating = false
+                }
+            }
+        } catch {
+            // On error, default to onboarding
+            await MainActor.run {
+                print("Error fetching profile: \(error), starting onboarding")
+                step = .basicProfile
+                isAuthenticating = false
+            }
+        }
+    }
+
     func logout() {
+        // Clear cached profile image
+        if !userId.isEmpty {
+            ImageCache.shared.removeImage(forKey: "profile_\(userId)")
+        }
+
         // Clear auth state
         AuthManager.shared.logout()
 
@@ -163,6 +246,7 @@ final class OnboardingFlow: ObservableObject {
         userId = ""
         firstName = ""
         username = ""
+        profilePhoto = nil
 
         // Go back to welcome screen
         step = .welcome
@@ -175,11 +259,43 @@ final class OnboardingFlow: ObservableObject {
     func resetForPreview() {
         step = .feed
     }
+
+    private func loadProfileImage(from photoString: String) async -> UIImage? {
+        // Check if it's a URL
+        if photoString.hasPrefix("http"), let url = URL(string: photoString) {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                return UIImage(data: data)
+            } catch {
+                print("Failed to load profile image from URL: \(error)")
+                return nil
+            }
+        }
+
+        // Check if it's base64
+        if let dataRange = photoString.range(of: "base64,") {
+            let base64String = String(photoString[dataRange.upperBound...])
+            if let imageData = Data(base64Encoded: base64String) {
+                return UIImage(data: imageData)
+            }
+        }
+
+        return nil
+    }
 }
 
 enum SizingGender: String, CaseIterable {
-    case mens = "Men’s"
-    case womens = "Women’s"
+    case mens = "Men's"
+    case womens = "Women's"
+
+    /// Parse from API response
+    static func fromAPI(_ value: String) -> SizingGender {
+        switch value {
+        case "mens": return .mens
+        case "womens": return .womens
+        default: return .mens
+        }
+    }
 }
 
 struct MensSizes {

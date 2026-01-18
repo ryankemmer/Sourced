@@ -13,9 +13,11 @@ class AuthManager: ObservableObject {
 
     @Published var isAuthenticated: Bool = false
     @Published var currentUserId: String?
+    @Published var onboardingComplete: Bool = false
 
     private let userDefaults = UserDefaults.standard
     private let userIdKey = "userId"
+    private let onboardingCompleteKey = "onboardingComplete"
 
     private init() {
         loadAuthState()
@@ -25,6 +27,7 @@ class AuthManager: ObservableObject {
     func loadAuthState() {
         currentUserId = userDefaults.string(forKey: userIdKey)
         isAuthenticated = currentUserId != nil
+        onboardingComplete = userDefaults.bool(forKey: onboardingCompleteKey)
     }
 
     // Save auth state after successful login
@@ -34,10 +37,18 @@ class AuthManager: ObservableObject {
         self.isAuthenticated = true
     }
 
+    // Mark onboarding as complete
+    func setOnboardingComplete(_ complete: Bool) {
+        userDefaults.set(complete, forKey: onboardingCompleteKey)
+        self.onboardingComplete = complete
+    }
+
     // Clear auth state on logout
     func logout() {
         userDefaults.removeObject(forKey: userIdKey)
+        userDefaults.removeObject(forKey: onboardingCompleteKey)
         currentUserId = nil
         isAuthenticated = false
+        onboardingComplete = false
     }
 }

@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct ThriftItem: Identifiable {
     let id: Int
@@ -15,9 +16,29 @@ struct ThriftItem: Identifiable {
     let source: String
 }
 
+struct ProfileImageView: View {
+    let image: UIImage?
+
+    var body: some View {
+        let _ = print("ProfileImageView - image is \(image == nil ? "NIL" : "SET")")
+        if let profileImage = image {
+            Image(uiImage: profileImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 32, height: 32)
+                .clipShape(Circle())
+        } else {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 28))
+                .foregroundColor(.black.opacity(0.3))
+        }
+    }
+}
+
 struct PersonalizedFeedScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
     @State private var showLogoutConfirmation = false
+    @State private var profileImageRefresh = UUID()
 
     let items: [ThriftItem] = [
         ThriftItem(
@@ -61,11 +82,16 @@ struct PersonalizedFeedScreen: View {
                 Button {
                     showLogoutConfirmation = true
                 } label: {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(.black)
+                    ProfileImageView(image: flow.profilePhoto)
+                        .id(profileImageRefresh)
+                }
+                .onAppear {
+                    profileImageRefresh = UUID()
                 }
                 .confirmationDialog("Account", isPresented: $showLogoutConfirmation) {
+                    Button("Edit Profile") {
+                        flow.step = .editProfile
+                    }
                     Button("Log Out", role: .destructive) {
                         flow.logout()
                     }
@@ -120,6 +146,9 @@ struct PersonalizedFeedScreen: View {
             )
         }
         .background(Color.white.ignoresSafeArea())
+        .onReceive(flow.$profilePhoto) { _ in
+            profileImageRefresh = UUID()
+        }
     }
 }
 

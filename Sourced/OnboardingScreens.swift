@@ -297,12 +297,29 @@ struct BasicProfileScreen: View {
                         if showError { showError = false }
                     }
 
-                TextField("Username", text: $username)
-                    .autocapitalization(.none)
-                    .modifier(OnboardingTextField())
-                    .onChange(of: username) { _ in
-                        if showError { showError = false }
-                    }
+                HStack(spacing: 0) {
+                    Text("@")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundColor(.black.opacity(0.4))
+                        .padding(.leading, 14)
+
+                    TextField("username", text: $username)
+                        .autocapitalization(.none)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundColor(.black)
+                        .padding(.vertical, 12)
+                        .padding(.trailing, 14)
+                        .padding(.leading, 4)
+                }
+                .background(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.black.opacity(0.4), lineWidth: 1)
+                )
+                .accentColor(.black)
+                .onChange(of: username) { _ in
+                    if showError { showError = false }
+                }
 
                 // Profile photo section
                 VStack(spacing: 12) {
@@ -349,25 +366,27 @@ struct BasicProfileScreen: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
 
-                        Button {
-                            imageSourceType = .camera
-                            showingImagePicker = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "camera")
-                                    .font(.system(size: 12))
-                                Text("Take Photo")
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                imageSourceType = .camera
+                                showingImagePicker = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "camera")
+                                        .font(.system(size: 12))
+                                    Text("Take Photo")
+                                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.white)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                     }
 
@@ -418,7 +437,14 @@ struct PersonalizationChoiceScreen: View {
             title: "How do you want to personalize?",
             subtitle: "Choose one to start. You can add more later.",
             showBack: true,
-            backAction: { flow.step = .basicProfile }
+            backAction: {
+                if flow.isEditingPreferences {
+                    flow.isEditingPreferences = false
+                    flow.step = .editProfile
+                } else {
+                    flow.step = .basicProfile
+                }
+            }
         ) {
             VStack(spacing: 16) {
                 Button {
@@ -472,22 +498,6 @@ struct PersonalizationChoiceScreen: View {
                         .stroke(Color.black.opacity(0.35), lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-                Button {
-                    flow.step = .styleProfile
-                } label: {
-                    VStack(spacing: 4) {
-                        Text("Skip & browse basic feed")
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                        Text("We'll still ask a few quick style + size questions.")
-                            .font(.system(size: 11, weight: .regular, design: .rounded))
-                            .foregroundColor(.black.opacity(0.6))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 8)
             }
 
             Text("We only analyze images. We never publish or edit your boards or photos.")

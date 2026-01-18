@@ -77,15 +77,6 @@ struct PinterestOAuthScreen: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(pinterestAuth.isAuthenticating)
 
-                Button {
-                    flow.step = .styleProfile
-                } label: {
-                    Text("Skip for now")
-                        .foregroundColor(.black.opacity(0.8))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                }
-                .padding(.top, 4)
-
                 Text("We only analyze images. We never publish or edit your boards.")
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundColor(.black.opacity(0.6))
@@ -177,11 +168,16 @@ struct SelectPinterestBoardScreen: View {
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundColor(.black.opacity(0.7))
                         Button {
-                            flow.step = .styleProfile
+                            if flow.isEditingPreferences {
+                                flow.isEditingPreferences = false
+                                flow.step = .feed
+                            } else {
+                                flow.step = .styleProfile
+                            }
                         } label: {
-                            Text("Skip to style profile")
+                            Text("Continue")
                         }
-                        .buttonStyle(SecondaryButtonStyle())
+                        .buttonStyle(PrimaryButtonStyle())
                     }
                     .padding(.vertical, 20)
                 } else {
@@ -254,15 +250,6 @@ struct SelectPinterestBoardScreen: View {
                     .disabled(flow.selectedPinterestBoards.isEmpty)
                     .padding(.top, 8)
                 }
-
-                Button {
-                    flow.step = .styleProfile
-                } label: {
-                    Text("Skip for now")
-                        .foregroundColor(.black.opacity(0.8))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                }
-                .padding(.top, 8)
             }
         }
         .onAppear {
@@ -371,7 +358,12 @@ struct SelectPinterestBoardScreen: View {
 
         // TODO: Send selected boards to backend for processing
 
-        flow.step = .styleProfile
+        if flow.isEditingPreferences {
+            flow.isEditingPreferences = false
+            flow.step = .feed
+        } else {
+            flow.step = .styleProfile
+        }
     }
 }
 
@@ -479,15 +471,6 @@ struct OutfitUploadScreen: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(selectedImages.isEmpty || isScanning)
 
-                Button {
-                    flow.step = .styleProfile
-                } label: {
-                    Text("Skip and just set style profile")
-                        .foregroundColor(.black.opacity(0.8))
-                        .font(.system(size: 14, weight: .regular, design: .rounded))
-                }
-                .padding(.top, 4)
-
                 Text("We only analyze the images. Nothing is shared or posted anywhere.")
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundColor(.black.opacity(0.6))
@@ -501,7 +484,12 @@ struct OutfitUploadScreen: View {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
             self.isScanning = false
-            self.flow.step = .styleProfile
+            if self.flow.isEditingPreferences {
+                self.flow.isEditingPreferences = false
+                self.flow.step = .feed
+            } else {
+                self.flow.step = .styleProfile
+            }
         }
     }
 
@@ -642,6 +630,25 @@ struct BrandRow: View {
 
 struct SizingProfileScreen: View {
     @EnvironmentObject var flow: OnboardingFlow
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var showValidationError = false
+
+    private var hasAtLeastOneSize: Bool {
+        if flow.sizingGender == .mens {
+            return !flow.mensSizes.tops.isEmpty ||
+                   !flow.mensSizes.bottoms.isEmpty ||
+                   !flow.mensSizes.outerwear.isEmpty ||
+                   !flow.mensSizes.footwear.isEmpty ||
+                   !flow.mensSizes.tailoring.isEmpty ||
+                   !flow.mensSizes.accessories.isEmpty
+        } else {
+            return !flow.womensSizes.tops.isEmpty ||
+                   !flow.womensSizes.bottoms.isEmpty ||
+                   !flow.womensSizes.outerwear.isEmpty ||
+                   !flow.womensSizes.dresses.isEmpty
+        }
+    }
 
     var body: some View {
         OnboardingShell(
@@ -679,17 +686,93 @@ struct SizingProfileScreen: View {
 
                 if flow.sizingGender == .mens {
                     SizeGridMens(mens: $flow.mensSizes)
+                        .onChange(of: flow.mensSizes.tops) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.bottoms) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.outerwear) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.footwear) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.tailoring) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.accessories) { _ in showValidationError = false }
                 } else {
                     SizeGridWomens(womens: $flow.womensSizes)
+                        .onChange(of: flow.womensSizes.tops) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.bottoms) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.outerwear) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.dresses) { _ in showValidationError = false }
+                }
+
+                if showValidationError {
+                    Text("Please select at least one size")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+
+                if let error = saveError {
+                    Text(error)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
                 }
 
                 Button {
-                    flow.step = .vibeLoading
+                    if hasAtLeastOneSize {
+                        saveProfileAndContinue()
+                    } else {
+                        showValidationError = true
+                    }
                 } label: {
-                    Text("Continue")
+                    if isSaving {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Continue")
+                    }
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .disabled(isSaving)
                 .padding(.top, 10)
+            }
+        }
+    }
+
+    private func saveProfileAndContinue() {
+        isSaving = true
+        saveError = nil
+
+        Task {
+            do {
+                // Convert profile photo to data if available
+                let photoData = flow.profilePhoto?.jpegData(compressionQuality: 0.7)
+
+                try await ProfileService.shared.saveProfile(
+                    userId: flow.userId,
+                    firstName: flow.firstName,
+                    username: flow.username,
+                    profilePhotoData: photoData,
+                    selectedPinterestBoards: flow.selectedPinterestBoards,
+                    selectedBrands: flow.selectedBrands,
+                    sizingGender: flow.sizingGender,
+                    mensSizes: flow.mensSizes,
+                    womensSizes: flow.womensSizes,
+                    onboardingComplete: true
+                )
+
+                await MainActor.run {
+                    // Cache profile photo for instant loading
+                    if let photo = flow.profilePhoto {
+                        ImageCache.shared.saveImage(photo, forKey: "profile_\(flow.userId)")
+                    }
+                    // Cache onboarding complete status
+                    AuthManager.shared.setOnboardingComplete(true)
+                    isSaving = false
+                    flow.step = .vibeLoading
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    saveError = "Failed to save profile. Please try again."
+                    print("Profile save error: \(error)")
+                }
             }
         }
     }
@@ -847,6 +930,651 @@ struct BoardPreviewGrid: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.black.opacity(0.15), lineWidth: 1)
             )
+        }
+    }
+}
+
+// MARK: - Edit Profile
+
+struct EditProfileScreen: View {
+    @EnvironmentObject var flow: OnboardingFlow
+    @State private var firstName: String = ""
+    @State private var username: String = ""
+    @State private var selectedPhoto: UIImage?
+    @State private var profilePhotoURL: String?
+    @State private var showingImagePicker = false
+    @State private var imageSourceType: UIImagePickerController.SourceType = .photoLibrary
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        OnboardingShell(
+            title: "Edit Profile",
+            subtitle: "Update your profile information and preferences.",
+            showBack: true,
+            backAction: { flow.step = .feed }
+        ) {
+            if isLoading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(1.2)
+                    Text("Loading profile...")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.black.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                VStack(spacing: 24) {
+                    // Profile photo section
+                    VStack(spacing: 12) {
+                        if let photo = selectedPhoto {
+                            Image(uiImage: photo)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                )
+                        } else if let existingPhoto = flow.profilePhoto {
+                            Image(uiImage: existingPhoto)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 100, height: 100)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                )
+                        } else if let photoURL = profilePhotoURL, let url = URL(string: photoURL) {
+                            AsyncImage(url: url) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                Circle()
+                                    .fill(Color.black.opacity(0.05))
+                                    .overlay(
+                                        ProgressView()
+                                    )
+                            }
+                            .frame(width: 100, height: 100)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                            )
+                        } else {
+                            Circle()
+                                .fill(Color.black.opacity(0.05))
+                                .frame(width: 100, height: 100)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 40))
+                                        .foregroundColor(.black.opacity(0.3))
+                                )
+                        }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            imageSourceType = .photoLibrary
+                            showingImagePicker = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo")
+                                    .font(.system(size: 12))
+                                Text("Change Photo")
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                imageSourceType = .camera
+                                showingImagePicker = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "camera")
+                                        .font(.system(size: 12))
+                                    Text("Take Photo")
+                                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                        }
+                    }
+                }
+
+                // Name and username fields
+                VStack(spacing: 16) {
+                    TextField("First name", text: $firstName)
+                        .textContentType(.givenName)
+                        .autocapitalization(.words)
+                        .modifier(OnboardingTextField())
+
+                    HStack(spacing: 0) {
+                        Text("@")
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundColor(.black.opacity(0.4))
+                            .padding(.leading, 14)
+
+                        TextField("username", text: $username)
+                            .autocapitalization(.none)
+                            .font(.system(size: 15, weight: .regular, design: .rounded))
+                            .foregroundColor(.black)
+                            .padding(.vertical, 12)
+                            .padding(.trailing, 14)
+                            .padding(.leading, 4)
+                    }
+                    .background(Color.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.black.opacity(0.4), lineWidth: 1)
+                    )
+                    .accentColor(.black)
+                }
+
+                // Large action buttons
+                VStack(spacing: 12) {
+                    Text("Update Preferences")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(.black.opacity(0.6))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+
+                    Button {
+                        saveProfileChanges()
+                        flow.isEditingPreferences = true
+                        flow.step = .personalizationChoice
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Update boards / reference photos")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                Text("Add Pinterest boards or upload new outfit photos")
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundColor(.black.opacity(0.6))
+                            }
+                            Spacer()
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 18))
+                        }
+                        .foregroundColor(.black)
+                        .padding(16)
+                        .background(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+
+                    Button {
+                        saveProfileChanges()
+                        flow.step = .editBrands
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Update preferred brands")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                Text("Change the brands you love to shop")
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundColor(.black.opacity(0.6))
+                            }
+                            Spacer()
+                            Image(systemName: "tag")
+                                .font(.system(size: 18))
+                        }
+                        .foregroundColor(.black)
+                        .padding(16)
+                        .background(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+
+                    Button {
+                        saveProfileChanges()
+                        flow.step = .editSizing
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Update sizing")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                Text("Adjust your size preferences")
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundColor(.black.opacity(0.6))
+                            }
+                            Spacer()
+                            Image(systemName: "ruler")
+                                .font(.system(size: 18))
+                        }
+                        .foregroundColor(.black)
+                        .padding(16)
+                        .background(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+
+                    Button {
+                        saveAndReturn()
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Save & Return")
+                        }
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(isSaving)
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .sheet(isPresented: $showingImagePicker) {
+            ImagePicker(image: $selectedPhoto, sourceType: imageSourceType)
+        }
+        .onAppear {
+            fetchProfile()
+        }
+    }
+
+    private func fetchProfile() {
+        isLoading = true
+        loadError = nil
+
+        Task {
+            do {
+                if let profile = try await ProfileService.shared.fetchProfile(userId: flow.userId) {
+                    await MainActor.run {
+                        // Populate local state
+                        firstName = profile.firstName ?? flow.firstName
+                        username = profile.username ?? flow.username
+                        profilePhotoURL = profile.profilePhoto
+
+                        // Also update flow with fetched data
+                        if let fn = profile.firstName, !fn.isEmpty {
+                            flow.firstName = fn
+                        }
+                        if let un = profile.username, !un.isEmpty {
+                            flow.username = un
+                        }
+                        if let boards = profile.selectedPinterestBoards {
+                            flow.selectedPinterestBoards = Set(boards)
+                        }
+                        if let brands = profile.selectedBrands {
+                            flow.selectedBrands = Set(brands)
+                        }
+                        if let gender = profile.sizingGender {
+                            flow.sizingGender = SizingGender.fromAPI(gender)
+                        }
+                        if let mens = profile.mensSizes {
+                            flow.mensSizes.tops = mens.tops ?? ""
+                            flow.mensSizes.bottoms = mens.bottoms ?? ""
+                            flow.mensSizes.outerwear = mens.outerwear ?? ""
+                            flow.mensSizes.footwear = mens.footwear ?? ""
+                            flow.mensSizes.tailoring = mens.tailoring ?? ""
+                            flow.mensSizes.accessories = mens.accessories ?? ""
+                        }
+                        if let womens = profile.womensSizes {
+                            flow.womensSizes.tops = womens.tops ?? ""
+                            flow.womensSizes.bottoms = womens.bottoms ?? ""
+                            flow.womensSizes.outerwear = womens.outerwear ?? ""
+                            flow.womensSizes.dresses = womens.dresses ?? ""
+                        }
+
+                        isLoading = false
+                    }
+                } else {
+                    // No profile found, use local flow data
+                    await MainActor.run {
+                        firstName = flow.firstName
+                        username = flow.username
+                        selectedPhoto = flow.profilePhoto
+                        isLoading = false
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    // On error, fall back to local flow data
+                    firstName = flow.firstName
+                    username = flow.username
+                    selectedPhoto = flow.profilePhoto
+                    isLoading = false
+                    print("Failed to fetch profile: \(error)")
+                }
+            }
+        }
+    }
+
+    private func saveProfileChanges() {
+        if !firstName.trimmingCharacters(in: .whitespaces).isEmpty {
+            flow.firstName = firstName
+        }
+        if !username.trimmingCharacters(in: .whitespaces).isEmpty {
+            flow.username = username
+        }
+        if let photo = selectedPhoto {
+            flow.profilePhoto = photo
+        }
+    }
+
+    private func saveAndReturn() {
+        saveProfileChanges()
+        isSaving = true
+
+        Task {
+            do {
+                let photoData = flow.profilePhoto?.jpegData(compressionQuality: 0.7)
+
+                try await ProfileService.shared.saveProfile(
+                    userId: flow.userId,
+                    firstName: flow.firstName,
+                    username: flow.username,
+                    profilePhotoData: photoData,
+                    selectedPinterestBoards: flow.selectedPinterestBoards,
+                    selectedBrands: flow.selectedBrands,
+                    sizingGender: flow.sizingGender,
+                    mensSizes: flow.mensSizes,
+                    womensSizes: flow.womensSizes
+                )
+
+                await MainActor.run {
+                    // Cache profile photo for instant loading
+                    if let photo = flow.profilePhoto {
+                        ImageCache.shared.saveImage(photo, forKey: "profile_\(flow.userId)")
+                    }
+                    isSaving = false
+                    flow.step = .feed
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    flow.step = .feed  // Still navigate even on error
+                    print("Failed to save profile: \(error)")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Edit Brands
+
+struct EditBrandsScreen: View {
+    @EnvironmentObject var flow: OnboardingFlow
+    @State private var searchText: String = ""
+    @State private var isSaving = false
+
+    var filteredBrands: [String] {
+        if searchText.isEmpty {
+            return availableBrands
+        }
+        return availableBrands.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        OnboardingShell(
+            title: "Update preferred brands",
+            subtitle: "Select the brands you love to shop.",
+            showBack: true,
+            backAction: { flow.step = .editProfile }
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.black.opacity(0.4))
+                        .font(.system(size: 14))
+
+                    TextField("Search brands...", text: $searchText)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundColor(.black)
+                        .autocapitalization(.none)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                )
+
+                // Selected brands count
+                if !flow.selectedBrands.isEmpty {
+                    Text("\(flow.selectedBrands.count) brand\(flow.selectedBrands.count == 1 ? "" : "s") selected")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.black.opacity(0.6))
+                }
+
+                // Brand list
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(filteredBrands, id: \.self) { brand in
+                            BrandRow(
+                                brand: brand,
+                                isSelected: flow.selectedBrands.contains(brand),
+                                onToggle: {
+                                    if flow.selectedBrands.contains(brand) {
+                                        flow.selectedBrands.remove(brand)
+                                    } else {
+                                        flow.selectedBrands.insert(brand)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Button {
+                    saveAndReturn()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Save & Return")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isSaving)
+                .padding(.top, 10)
+            }
+        }
+    }
+
+    private func saveAndReturn() {
+        isSaving = true
+
+        Task {
+            do {
+                let photoData = flow.profilePhoto?.jpegData(compressionQuality: 0.7)
+
+                try await ProfileService.shared.saveProfile(
+                    userId: flow.userId,
+                    firstName: flow.firstName,
+                    username: flow.username,
+                    profilePhotoData: photoData,
+                    selectedPinterestBoards: flow.selectedPinterestBoards,
+                    selectedBrands: flow.selectedBrands,
+                    sizingGender: flow.sizingGender,
+                    mensSizes: flow.mensSizes,
+                    womensSizes: flow.womensSizes
+                )
+
+                await MainActor.run {
+                    isSaving = false
+                    flow.step = .feed
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    flow.step = .feed  // Still navigate even on error
+                    print("Failed to save profile: \(error)")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Edit Sizing
+
+struct EditSizingScreen: View {
+    @EnvironmentObject var flow: OnboardingFlow
+    @State private var isSaving = false
+    @State private var showValidationError = false
+
+    private var hasAtLeastOneSize: Bool {
+        if flow.sizingGender == .mens {
+            return !flow.mensSizes.tops.isEmpty ||
+                   !flow.mensSizes.bottoms.isEmpty ||
+                   !flow.mensSizes.outerwear.isEmpty ||
+                   !flow.mensSizes.footwear.isEmpty ||
+                   !flow.mensSizes.tailoring.isEmpty ||
+                   !flow.mensSizes.accessories.isEmpty
+        } else {
+            return !flow.womensSizes.tops.isEmpty ||
+                   !flow.womensSizes.bottoms.isEmpty ||
+                   !flow.womensSizes.outerwear.isEmpty ||
+                   !flow.womensSizes.dresses.isEmpty
+        }
+    }
+
+    var body: some View {
+        OnboardingShell(
+            title: "Update sizing",
+            subtitle: "Adjust your size preferences.",
+            showBack: true,
+            backAction: { flow.step = .editProfile }
+        ) {
+            VStack(alignment: .leading, spacing: 20) {
+                SectionHeader("Sizing") {
+                    Text("Choose the sizing you shop in most often.")
+                }
+
+                HStack(spacing: 10) {
+                    ForEach(SizingGender.allCases, id: \.self) { gender in
+                        Button {
+                            flow.sizingGender = gender
+                        } label: {
+                            Text(gender.rawValue)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundColor(gender == flow.sizingGender ? .white : .black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(
+                                    gender == flow.sizingGender ? Color.black : Color.white
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                        .stroke(Color.black.opacity(0.4), lineWidth: 1)
+                                )
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+
+                if flow.sizingGender == .mens {
+                    SizeGridMens(mens: $flow.mensSizes)
+                        .onChange(of: flow.mensSizes.tops) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.bottoms) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.outerwear) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.footwear) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.tailoring) { _ in showValidationError = false }
+                        .onChange(of: flow.mensSizes.accessories) { _ in showValidationError = false }
+                } else {
+                    SizeGridWomens(womens: $flow.womensSizes)
+                        .onChange(of: flow.womensSizes.tops) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.bottoms) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.outerwear) { _ in showValidationError = false }
+                        .onChange(of: flow.womensSizes.dresses) { _ in showValidationError = false }
+                }
+
+                if showValidationError {
+                    Text("Please select at least one size")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    if hasAtLeastOneSize {
+                        saveAndReturn()
+                    } else {
+                        showValidationError = true
+                    }
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Save & Return")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isSaving)
+                .padding(.top, 10)
+            }
+        }
+    }
+
+    private func saveAndReturn() {
+        isSaving = true
+
+        Task {
+            do {
+                let photoData = flow.profilePhoto?.jpegData(compressionQuality: 0.7)
+
+                try await ProfileService.shared.saveProfile(
+                    userId: flow.userId,
+                    firstName: flow.firstName,
+                    username: flow.username,
+                    profilePhotoData: photoData,
+                    selectedPinterestBoards: flow.selectedPinterestBoards,
+                    selectedBrands: flow.selectedBrands,
+                    sizingGender: flow.sizingGender,
+                    mensSizes: flow.mensSizes,
+                    womensSizes: flow.womensSizes
+                )
+
+                await MainActor.run {
+                    isSaving = false
+                    flow.step = .feed
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    flow.step = .feed  // Still navigate even on error
+                    print("Failed to save profile: \(error)")
+                }
+            }
         }
     }
 }
