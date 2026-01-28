@@ -757,6 +757,9 @@ struct SizingProfileScreen: View {
                     onboardingComplete: true
                 )
 
+                // Trigger listings finder in background
+                await ProfileService.shared.triggerListingsFinder(userId: flow.userId)
+
                 await MainActor.run {
                     // Cache profile photo for instant loading
                     if let photo = flow.profilePhoto {

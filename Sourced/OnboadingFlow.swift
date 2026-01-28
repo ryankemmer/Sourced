@@ -71,6 +71,9 @@ final class OnboardingFlow: ObservableObject {
     @Published var mensSizes = MensSizes()
     @Published var womensSizes = WomensSizes()
 
+    // Feed images
+    @Published var feedImages: [FeedImage] = []
+
     init() {
         // Restore userId from saved auth state
         if let savedUserId = AuthManager.shared.currentUserId {
@@ -196,6 +199,9 @@ final class OnboardingFlow: ObservableObject {
                         womensSizes.bottoms = womens.bottoms ?? ""
                         womensSizes.outerwear = womens.outerwear ?? ""
                         womensSizes.dresses = womens.dresses ?? ""
+                    }
+                    if let images = profile.images {
+                        feedImages = images
                     }
 
                     // Check if onboarding is complete

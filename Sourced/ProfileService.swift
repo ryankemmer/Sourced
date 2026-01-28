@@ -16,6 +16,12 @@ enum ProfileError: Error {
     case encodingError
 }
 
+struct FeedImage: Codable, Identifiable {
+    let id: String
+    let s3Path: String?
+    let url: String
+}
+
 struct ProfileData: Codable {
     let userId: String
     var email: String?
@@ -28,6 +34,7 @@ struct ProfileData: Codable {
     var mensSizes: MensSizesData?
     var womensSizes: WomensSizesData?
     var onboardingComplete: Bool?
+    var images: [FeedImage]?
 }
 
 struct MensSizesData: Codable {
@@ -230,6 +237,41 @@ class ProfileService {
             throw error
         } catch {
             throw ProfileError.networkError(error)
+        }
+    }
+
+    // MARK: - Trigger Listings Finder
+
+    func triggerListingsFinder(userId: String) async {
+        let urlString = "https://p2g0jidnp9.execute-api.us-east-1.amazonaws.com/prod/listings-finder"
+
+        guard let url = URL(string: urlString) else {
+            print("Invalid listings finder URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload = ["user_id": userId]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+            print("=== Triggering Listings Finder ===")
+            print("userId: \(userId)")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("Listings finder response status: \(httpResponse.statusCode)")
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("Response: \(responseString)")
+                }
+            }
+        } catch {
+            print("Listings finder error: \(error)")
         }
     }
 }
