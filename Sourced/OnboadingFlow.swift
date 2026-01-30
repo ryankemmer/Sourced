@@ -332,37 +332,18 @@ struct WomensSizes {
     static let dressesOptions = ["XXS/00/34", "XS/0-2/36-38", "S/4/40", "M/6-8/42-44", "L/10/46", "XL/12-14/48-50", "XXL/16-18/52-54", "3XL/20-22", "4XL/24-26", "OS"]
 }
 
-struct PinterestPin: Identifiable, Codable, Hashable {
-    let id: String
-    let media: PinterestMedia?
-
-    struct PinterestMedia: Codable, Hashable {
-        let images: [String: PinterestImage]?
-
-        struct PinterestImage: Codable, Hashable {
-            let url: String?
-            let width: Int?
-            let height: Int?
-        }
-    }
-}
-
 struct PinterestBoard: Identifiable, Codable, Hashable {
     let id: String
     let name: String
     let description: String?
     let pin_count: Int?
-    let pins: [PinterestPin]?
+    let sample_images: [String]?
 
     var pinCount: Int {
         pin_count ?? 0
     }
 
     var pinImages: [String] {
-        pins?.compactMap { pin in
-            pin.media?.images?["originals"]?.url ??
-            pin.media?.images?["400x300"]?.url ??
-            pin.media?.images?["600x"]?.url
-        } ?? []
+        sample_images ?? []
     }
 }

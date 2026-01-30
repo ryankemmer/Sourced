@@ -65,10 +65,10 @@ struct PinListingsData: Codable {
 
 struct PinListingsResponse: Codable {
     let message: String?
-    let pin_id: String
+    let pin_id: String?
     let s3_image_key: String?
     let s3_image_url: String?
-    let items: [ItemTypeGroup]
+    let items: [ItemTypeGroup]?
 }
 
 // MARK: - Profile Image View
@@ -364,13 +364,58 @@ struct ImageDetailView: View {
                 return
             }
 
+            // The response is keyed by pin_id like: {"1234": {"pin_id": "1234", "items": [...]}}
             let decoder = JSONDecoder()
-            let decoded = try decoder.decode(PinListingsResponse.self, from: data)
+
+            // First try to parse as keyed response
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("JSON keys: \(json.keys)")
+
+                // Look for the pin data by image.id or any key with items
+                var pinData: [String: Any]?
+
+                if let data = json[image.id] as? [String: Any] {
+                    print("Found data with exact key: \(image.id)")
+                    pinData = data
+                } else {
+                    // Try to find any key that contains our data
+                    for (key, value) in json {
+                        if let valueDict = value as? [String: Any], valueDict["items"] != nil {
+                            print("Found data with key: \(key)")
+                            pinData = valueDict
+                            break
+                        }
+                    }
+                }
+
+                if let pinData = pinData,
+                   let pinDataJson = try? JSONSerialization.data(withJSONObject: pinData) {
+                    let decoded = try decoder.decode(PinListingsData.self, from: pinDataJson)
+                    print("Decoded \(decoded.items.count) item groups")
+
+                    await MainActor.run {
+                        listings = decoded.items
+                        isLoading = false
+                        errorMessage = nil
+                    }
+                    return
+                }
+            }
+
+            // Fallback: try direct decode
+            if let decoded = try? decoder.decode(PinListingsResponse.self, from: data),
+               let items = decoded.items {
+                await MainActor.run {
+                    listings = items
+                    isLoading = false
+                    errorMessage = nil
+                }
+                return
+            }
 
             await MainActor.run {
-                listings = decoded.items
+                errorMessage = "No listings available"
                 isLoading = false
-                errorMessage = nil
             }
         } catch {
             print("Error fetching listings: \(error)")
